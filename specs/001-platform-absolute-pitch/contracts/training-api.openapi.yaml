@@ -1,0 +1,325 @@
+openapi: 3.0.3
+info:
+  title: SuperHuman Training Service Contract
+  version: 0.2.0
+  description: |
+    Planning contract for plugin catalog, sessions, attempts, replay current note,
+    cooldown checks, and per-plugin dashboard trends.
+servers:
+  - url: https://local.superhuman.internal
+paths:
+  /plugins:
+    get:
+      summary: List available training plugins
+      operationId: listPlugins
+      responses:
+        '200':
+          description: Plugin catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TrainingPlugin'
+                required: [items]
+  /plugins/{pluginId}/cooldown:
+    get:
+      summary: Get session and next-attempt cooldown status for a plugin
+      operationId: getPluginCooldownStatus
+      parameters:
+        - $ref: '#/components/parameters/PluginId'
+      responses:
+        '200':
+          description: Cooldown status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CooldownStatus'
+  /sessions:
+    post:
+      summary: Start a training session for a plugin
+      operationId: startSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pluginId:
+                  type: string
+              required: [pluginId]
+      responses:
+        '201':
+          description: Session started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingSession'
+        '409':
+          description: Plugin cooldown active; session start denied
+  /sessions/{sessionId}/attempts:
+    post:
+      summary: Submit one attempt answer (single accepted guess)
+      operationId: submitAttempt
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                attemptId:
+                  type: string
+                submissionMode:
+                  type: string
+                  enum: [voice, keyboard]
+                submittedNote:
+                  type: string
+              required: [attemptId, submissionMode, submittedNote]
+      responses:
+        '200':
+          description: Attempt accepted and evaluated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttemptResult'
+        '409':
+          description: Attempt already answered (second guess rejected)
+  /sessions/{sessionId}/attempts/{attemptId}/replay:
+    post:
+      summary: Replay current note for active attempt without changing prompt
+      operationId: replayCurrentNote
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/AttemptId'
+      responses:
+        '200':
+          description: Current note replayed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplayResponse'
+        '409':
+          description: Replay not allowed (attempt already submitted)
+  /sessions/{sessionId}/next-note:
+    post:
+      summary: Request next random note for current session
+      operationId: requestNextNote
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Next note granted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NextNoteResponse'
+        '423':
+          description: Next note locked until cooldown expires
+  /sessions/{sessionId}/repeat:
+    post:
+      summary: Request repeat test for the current flow
+      operationId: requestRepeat
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Repeat allowed
+        '423':
+          description: Repeat locked until cooldown expires
+  /dashboard/plugins:
+    get:
+      summary: List per-plugin dashboard summaries
+      operationId: listPluginDashboardSummaries
+      responses:
+        '200':
+          description: Per-plugin statistics without cross-plugin aggregation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PluginDashboardSummary'
+                required: [items]
+  /dashboard/plugins/{pluginId}/trends:
+    get:
+      summary: Get daily trend points for one plugin
+      operationId: getPluginTrends
+      parameters:
+        - $ref: '#/components/parameters/PluginId'
+        - in: query
+          name: days
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 365
+            default: 30
+      responses:
+        '200':
+          description: Daily trend series
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pluginId:
+                    type: string
+                  points:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DashboardTrendPoint'
+                required: [pluginId, points]
+
+components:
+  parameters:
+    PluginId:
+      in: path
+      name: pluginId
+      required: true
+      schema:
+        type: string
+    SessionId:
+      in: path
+      name: sessionId
+      required: true
+      schema:
+        type: string
+    AttemptId:
+      in: path
+      name: attemptId
+      required: true
+      schema:
+        type: string
+
+  schemas:
+    TrainingPlugin:
+      type: object
+      properties:
+        pluginId:
+          type: string
+        name:
+          type: string
+        inputModalities:
+          type: array
+          items:
+            type: string
+            enum: [voice, keyboard, touch]
+        resultType:
+          type: string
+        cooldownMinutes:
+          type: integer
+          nullable: true
+      required: [pluginId, name, inputModalities, resultType]
+
+    TrainingSession:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        pluginId:
+          type: string
+        status:
+          type: string
+          enum: [active, completed, aborted]
+        startedAt:
+          type: string
+          format: date-time
+      required: [sessionId, pluginId, status, startedAt]
+
+    AttemptResult:
+      type: object
+      properties:
+        attemptId:
+          type: string
+        isCorrect:
+          type: boolean
+        submittedAt:
+          type: string
+          format: date-time
+        nextAllowedAt:
+          type: string
+          format: date-time
+      required: [attemptId, isCorrect, submittedAt, nextAllowedAt]
+
+    ReplayResponse:
+      type: object
+      properties:
+        attemptId:
+          type: string
+        notePrompt:
+          type: string
+        replayCount:
+          type: integer
+        replayedAt:
+          type: string
+          format: date-time
+      required: [attemptId, notePrompt, replayCount, replayedAt]
+
+    NextNoteResponse:
+      type: object
+      properties:
+        attemptId:
+          type: string
+        notePrompt:
+          type: string
+        answerOpenedAt:
+          type: string
+          format: date-time
+      required: [attemptId, notePrompt, answerOpenedAt]
+
+    CooldownStatus:
+      type: object
+      properties:
+        pluginId:
+          type: string
+        canStartSession:
+          type: boolean
+        sessionNextAllowedAt:
+          type: string
+          format: date-time
+          nullable: true
+        canRequestNextNote:
+          type: boolean
+        nextNoteAllowedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required: [pluginId, canStartSession, canRequestNextNote]
+
+    PluginDashboardSummary:
+      type: object
+      properties:
+        pluginId:
+          type: string
+        pluginName:
+          type: string
+        latestAccuracyRate:
+          type: number
+          format: float
+        trendDirection:
+          type: string
+          enum: [up, down, flat]
+      required: [pluginId, pluginName, trendDirection]
+
+    DashboardTrendPoint:
+      type: object
+      properties:
+        day:
+          type: string
+          format: date
+        metricValue:
+          type: number
+          format: float
+        trendDirection:
+          type: string
+          enum: [up, down, flat]
+      required: [day, metricValue, trendDirection]
