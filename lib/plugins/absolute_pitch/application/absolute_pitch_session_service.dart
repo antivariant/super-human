@@ -5,15 +5,14 @@ import 'attempt_submission_guard.dart';
 import 'next_note_lock_service.dart';
 
 class AbsolutePitchSessionService {
-  AbsolutePitchSessionService({
-    required int seed,
-    required AbsolutePitchAttemptRepositorySQLite repository,
-    AttemptSubmissionGuard? submissionGuard,
-    NextNoteLockService? lockService,
-  })  : _noteSequence = AbsolutePitchNoteSequence(seed: seed),
-        _repository = repository,
-        _submissionGuard = submissionGuard ?? const AttemptSubmissionGuard(),
-        _lockService = lockService ?? const NextNoteLockService();
+	AbsolutePitchSessionService({
+  		required int seed,
+  		required this._repository,
+  		AttemptSubmissionGuard? submissionGuard,
+  		NextNoteLockService? lockService,
+		})  : _noteSequence = AbsolutePitchNoteSequence(seed: seed),
+      _submissionGuard = submissionGuard ?? const AttemptSubmissionGuard(),
+      _lockService = lockService ?? const NextNoteLockService();
 
   final AbsolutePitchNoteSequence _noteSequence;
   final AbsolutePitchAttemptRepositorySQLite _repository;
